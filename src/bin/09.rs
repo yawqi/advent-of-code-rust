@@ -43,10 +43,6 @@ struct Position {
 }
 
 impl Position {
-    fn new(x: i64, y: i64) -> Self {
-        Self { x, y }
-    }
-
     fn move_one(&mut self, dir: Dir) {
         match dir {
             Dir::Up => self.y += 1,
