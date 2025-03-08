@@ -1,4 +1,4 @@
-use std::{iter::Cycle, str::FromStr};
+use std::str::FromStr;
 
 use anyhow::Ok;
 
@@ -19,7 +19,7 @@ impl Inst {
         }
     }
 
-    pub fn apply(&self, mach: &mut Machine) {
+    pub fn apply<const N: usize, const M: usize>(&self, mach: &mut Machine<N, M>) {
         match self {
             Self::Noop => {}
             Self::Add(v) => mach.add_reg(*v),
@@ -54,13 +54,13 @@ impl RunningInst {
         }
     }
 
-    pub fn apply(&self, mach: &mut Machine) {
+    pub fn apply<const N: usize, const M: usize>(&self, mach: &mut Machine<N, M>) {
         self.inst.apply(mach);
     }
 }
 
 #[derive(Debug)]
-struct Machine {
+struct Machine<const N: usize, const M: usize> {
     x_reg: i64,
     cycle: u64,
     unfinished: RunningInst,
@@ -68,7 +68,7 @@ struct Machine {
     recorded_sum: i64,
 }
 
-impl Machine {
+impl<const N: usize, const M: usize> Machine<N, M> {
     pub fn new() -> Self {
         Self {
             x_reg: 1,
@@ -89,6 +89,7 @@ impl Machine {
             if self.cycle % 40 == 20 {
                 self.record();
             }
+            self.draw();
         }
         self.unfinished.clone().apply(self);
     }
@@ -96,10 +97,26 @@ impl Machine {
     fn record(&mut self) {
         self.recorded_sum += self.cycle as i64 * self.x_reg;
     }
+
+    fn is_sprite_in_range(&self) -> bool {
+        self.cycle as i64 % 40 >= self.x_reg && self.cycle as i64 % 40 <= self.x_reg + 2
+    }
+
+    fn draw(&self) {
+        if self.is_sprite_in_range() {
+            print!("#");
+        } else {
+            print!(".");
+        }
+
+        if self.cycle % N as u64 == 0 {
+            println!();
+        }
+    }
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
-    let mut mach = Machine::new();
+    let mut mach = Machine::<40, 6>::new();
     input.lines().flat_map(str::parse::<Inst>).for_each(|inst| {
         mach.execute(inst);
     });
@@ -108,6 +125,10 @@ pub fn part_one(input: &str) -> Option<u64> {
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
+    let mut mach = Machine::<40, 6>::new();
+    input.lines().flat_map(str::parse::<Inst>).for_each(|inst| {
+        mach.execute(inst);
+    });
     None
 }
 
