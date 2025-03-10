@@ -79,7 +79,48 @@ pub fn part_one(input: &str) -> Option<u64> {
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    let mut v = input
+        .split("\n\n")
+        .flat_map(|group| {
+            let (first, second) = group.split_once('\n').unwrap();
+            let first = parser::root_element(first.trim()).unwrap();
+            let second = parser::root_element(second.trim()).unwrap();
+            [first, second]
+        })
+        .collect::<Vec<_>>();
+
+    let dividor1 = parser::root_element("[[2]]").unwrap();
+    let dividor2 = parser::root_element("[[6]]").unwrap();
+    v.push(dividor1.clone());
+    v.push(dividor2.clone());
+
+    v.sort();
+
+    let idx1 = v
+        .iter()
+        .enumerate()
+        .find_map(|(idx, ele)| {
+            if *ele == dividor1 {
+                Some(idx + 1)
+            } else {
+                None
+            }
+        })
+        .unwrap() as u64;
+
+    let idx2 = v
+        .iter()
+        .enumerate()
+        .find_map(|(idx, ele)| {
+            if *ele == dividor2 {
+                Some(idx + 1)
+            } else {
+                None
+            }
+        })
+        .unwrap() as u64;
+
+    Some(idx1 * idx2)
 }
 
 #[cfg(test)]
