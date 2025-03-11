@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::ops::{RangeBounds, RangeInclusive};
 
 use itertools::Itertools;
 use parse_rule::parse_rule;
@@ -59,6 +59,22 @@ impl Rule {
     }
 }
 
+fn ranges(rules: &[Rule], row: i64) -> Vec<RangeInclusive<i64>> {
+    let mut ranges = rules.iter().flat_map(|r| r.range_at_row(row)).collect_vec();
+    ranges.sort_by_key(|r| *r.start());
+
+    ranges
+        .into_iter()
+        .coalesce(|a, b| {
+            if *a.end() + 1 >= *b.start() {
+                Ok(*a.start()..=*a.end().max(b.end()))
+            } else {
+                Err((a, b))
+            }
+        })
+        .collect_vec()
+}
+
 // Sensor at x=3923513, y=2770279: closest beacon is at x=3866712, y=2438950
 parser! {
     pub grammar parse_rule() for str {
@@ -77,23 +93,63 @@ pub fn part_one(input: &str) -> Option<u64> {
         .map(|line| parse_rule(line.trim()).unwrap())
         .collect_vec();
 
-    let mut all_range = rules
+    let ranges = ranges(&rules, 2000000);
+    let mut all_count = ranges
         .iter()
-        .flat_map(|r| r.range_at_row(2000000))
-        .flatten()
+        .fold(0, |sum, r| sum + r.end() - r.start() + 1);
+
+    let to_be_removes = rules
+        .iter()
+        .filter_map(|r| {
+            if r.beacon.y == 2000000 {
+                Some(r.beacon.x)
+            } else {
+                None
+            }
+        })
         .collect::<HashSet<i64>>();
 
-    for rule in rules {
-        if rule.beacon.y == 2000000 && all_range.contains(&rule.beacon.x) {
-            all_range.remove(&rule.beacon.x);
+    for to_be_remove in to_be_removes {
+        for r in &ranges {
+            if r.contains(&to_be_remove) {
+                all_count -= 1;
+            }
         }
     }
 
-    Some(all_range.len() as u64)
+    Some(all_count as u64)
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    let rules = input
+        .lines()
+        .map(|line| parse_rule(line.trim()).unwrap())
+        .collect_vec();
+
+    let x_range = 0..=4000000;
+    let y_range = 0..=4000000;
+
+    let point = y_range
+        .into_iter()
+        .find_map(|y| {
+            let ranges = ranges(&rules, y);
+
+            let mut ranges = ranges.into_iter().filter_map(|range| {
+                let new_range =
+                    *range.start().max(x_range.start())..=*range.end().min(x_range.end());
+                if new_range.start() > new_range.end() {
+                    None
+                } else {
+                    Some(new_range)
+                }
+            });
+
+            ranges.nth(1).map(|r| (*r.start() - 1, y))
+        })
+        .unwrap();
+
+    dbg!(point);
+    Some((point.0 * 4000000 + point.1) as u64)
 }
 
 #[cfg(test)]
