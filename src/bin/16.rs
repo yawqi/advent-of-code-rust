@@ -136,7 +136,14 @@ impl Network {
             }
             curr = next;
         }
+
         paths
+            .into_iter()
+            .filter(|(name, p)| {
+                let valve = network.get(name).unwrap();
+                valve.rate != 0
+            })
+            .collect()
     }
 
     pub fn get_connections(&self, name: &Name) -> &HashMap<Name, Path> {
@@ -170,6 +177,10 @@ impl Move {
     pub fn new(path: Path, dest: Valve) -> Self {
         Self { path, dest }
     }
+
+    pub fn time_consumed(&self) -> u64 {
+        self.path.len() as u64 + 1
+    }
 }
 
 impl Display for Move {
@@ -194,22 +205,26 @@ impl State {
             released_pressure: 0,
             pressure: 0,
             remaining_time: total_time,
-            current_position: start_point,
+            current_position: start_point.clone(),
             opened_valve: HashSet::new(),
         }
     }
 
-    fn apply(&self, mov: Move) -> Option<Self> {
-        let time_consumed = mov.path.len() as u64 + 1;
-        if self.remaining_time < time_consumed
+    fn ready_to_move(&self, mov: &Move) -> bool {
+        !(self.remaining_time < mov.path.len() as u64 + 1
             || self.opened_valve.contains(&mov.dest.name)
-            || mov.dest.rate == 0
-        {
+            || mov.dest.rate == 0)
+    }
+
+    fn apply(&self, mov: Move) -> Option<Self> {
+        let time_consumed = mov.time_consumed();
+        if !self.ready_to_move(&mov) {
             return None;
         }
 
         let mut opened_valve = self.opened_valve.clone();
         opened_valve.insert(mov.dest.name);
+
         Some(Self {
             released_pressure: self.released_pressure + self.pressure * time_consumed,
             pressure: self.pressure + mov.dest.rate,
@@ -277,24 +292,28 @@ impl DualState {
     }
 
     pub fn apply(&self, moves: [Move; 2]) -> Option<Self> {
-        let time_consumed = moves.iter().map(|mov| mov.path.len() as u64 + 1).collect();
-        if self.remaining_time < time_consumed || self.opened_valve.contains(&mov.dest.name) {
+        if !self.human.ready_to_move(&moves[0]) || !self.elephant.ready_to_move(&moves[1]) {
             return None;
         }
 
         let mut opened_valve = self.opened_valve.clone();
-        opened_valve.insert(mov.dest.name);
-        Some(Self {
-            released_pressure: self.released_pressure + self.pressure * time_consumed,
-            pressure: self.pressure + mov.dest.rate,
-            remaining_time: self.remaining_time - time_consumed,
-            current_position: mov.dest.name,
-            opened_valve,
-        })
+        opened_valve.insert(moves[0].dest.name);
+        opened_valve.insert(moves[1].dest.name);
+
+        if let Some(human) = self.human.apply(moves[0].clone()) {
+            if let Some(elephant) = self.elephant.apply(moves[1].clone()) {
+                return Some(Self {
+                    human,
+                    elephant,
+                    opened_valve,
+                });
+            }
+        }
+        None
     }
 
     pub fn rewards(&self) -> u64 {
-        self.elephant.rewards() + self.human.rewards()
+        dbg!(self.elephant.rewards() + self.human.rewards())
     }
 
     pub fn find_best_state(&self, network: &Network) -> Self {
@@ -339,7 +358,17 @@ impl DualState {
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
-    None
+    let network = Network::new(
+        input
+            .lines()
+            .map(|line| valve::valve(line.trim()).unwrap())
+            .collect_vec(),
+    );
+
+    let dual = DualState::new(26, Name::new([b'A', b'A']));
+    let best_state = dual.find_best_state(&network);
+
+    Some(best_state.rewards())
 }
 
 #[cfg(test)]
