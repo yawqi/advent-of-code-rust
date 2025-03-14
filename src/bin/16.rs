@@ -8,11 +8,6 @@ use std::{
     fmt::Display,
 };
 
-// Valve SY has flow rate=0; tunnels lead to valves GW, LW
-// Valve TS has flow rate=0; tunnels lead to valves CC, OP
-// Valve LU has flow rate=0; tunnels lead to valves PS, XJ
-//
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 struct Name([u8; 2]);
 impl Name {
@@ -139,7 +134,7 @@ impl Network {
 
         paths
             .into_iter()
-            .filter(|(name, p)| {
+            .filter(|(name, _)| {
                 let valve = network.get(name).unwrap();
                 valve.rate != 0
             })
@@ -190,6 +185,8 @@ impl Display for Move {
     }
 }
 
+type Best = HashMap<Vec<Name>, u64>;
+
 #[derive(Debug, Clone)]
 struct State {
     released_pressure: u64,
@@ -205,7 +202,7 @@ impl State {
             released_pressure: 0,
             pressure: 0,
             remaining_time: total_time,
-            current_position: start_point.clone(),
+            current_position: start_point,
             opened_valve: HashSet::new(),
         }
     }
@@ -259,6 +256,31 @@ impl State {
 
         best_state
     }
+
+    pub fn apply_best_state(&self, best: &mut Best, network: &Network) -> State {
+        let mut best_state = self.clone();
+        let current_valves = self.opened_valve.iter().cloned().collect();
+        best.entry(current_valves)
+            .and_modify(|v| {
+                if *v < self.rewards() {
+                    *v = self.rewards()
+                }
+            })
+            .or_insert(self.rewards());
+
+        for (dest, path) in network.get_connections(&self.current_position) {
+            let dest_valve = network.get_valve(dest).clone();
+
+            let mov = Move::new(path.clone(), dest_valve);
+            if let Some(next_state) = self.apply(mov) {
+                let state = next_state.apply_best_state(best, network);
+                if state.rewards() > best_state.rewards() {
+                    best_state = state;
+                }
+            }
+        }
+        best_state
+    }
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
@@ -270,7 +292,8 @@ pub fn part_one(input: &str) -> Option<u64> {
     );
 
     let initial_state = State::new(30, Name::new([b'A', b'A']));
-    let best_state = initial_state.find_best_state(&network);
+    let mut best = HashMap::new();
+    let best_state = initial_state.apply_best_state(&mut best, &network);
 
     Some(best_state.rewards())
 }
@@ -313,7 +336,7 @@ impl DualState {
     }
 
     pub fn rewards(&self) -> u64 {
-        dbg!(self.elephant.rewards() + self.human.rewards())
+        self.elephant.rewards() + self.human.rewards()
     }
 
     pub fn find_best_state(&self, network: &Network) -> Self {
@@ -327,7 +350,7 @@ impl DualState {
         let elephant_connections = network.get_connections(&self.elephant.current_position);
 
         for (human, elephant) in human_connections
-            .into_iter()
+            .iter()
             .flat_map(|human| std::iter::repeat(human).zip(elephant_connections.iter()))
         {
             if self.opened_valve.contains(human.0)
@@ -365,10 +388,41 @@ pub fn part_two(input: &str) -> Option<u64> {
             .collect_vec(),
     );
 
-    let dual = DualState::new(26, Name::new([b'A', b'A']));
-    let best_state = dual.find_best_state(&network);
+    let initial_state = State::new(26, Name::new([b'A', b'A']));
+    let mut best = HashMap::new();
+    let _ = initial_state.apply_best_state(&mut best, &network);
+    let best_rewards = best
+        .iter()
+        .tuple_combinations()
+        .filter_map(|(v1, v2)| {
+            if v1
+                .0
+                .iter()
+                .collect::<HashSet<_>>()
+                .intersection(&v2.0.iter().collect::<HashSet<_>>())
+                .count()
+                == 0
+            {
+                Some(*v1.1 + *v2.1)
+            } else {
+                None
+            }
+        })
+        .max()
+        .unwrap();
 
-    Some(best_state.rewards())
+    Some(best_rewards)
+    // let network = Network::new(
+    //     input
+    //         .lines()
+    //         .map(|line| valve::valve(line.trim()).unwrap())
+    //         .collect_vec(),
+    // );
+
+    // let dual = DualState::new(26, Name::new([b'A', b'A']));
+    // let best_state = dual.find_best_state(&network);
+
+    // Some(best_state.rewards())
 }
 
 #[cfg(test)]
@@ -378,12 +432,12 @@ mod tests {
     #[test]
     fn test_part_one() {
         let result = part_one(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(1651));
     }
 
     #[test]
     fn test_part_two() {
         let result = part_two(&advent_of_code::template::read_file("examples", DAY));
-        assert_eq!(result, None);
+        assert_eq!(result, Some(1707));
     }
 }
