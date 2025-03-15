@@ -1,7 +1,10 @@
 advent_of_code::solution!(17);
 
 use anyhow::{anyhow, Result};
-use std::sync::LazyLock;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::LazyLock,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Coordinate {
@@ -150,6 +153,8 @@ static SQUARE: LazyLock<Rock> = LazyLock::new(|| Rock {
 struct Tower<const N: usize> {
     highest: u64,
     occupied: [Vec<bool>; N],
+    states: HashMap<(u64, usize, usize), (usize, u64)>,
+    pattern_found: bool,
 }
 
 impl<const N: usize> Tower<N> {
@@ -157,23 +162,64 @@ impl<const N: usize> Tower<N> {
         Self {
             highest: 0,
             occupied: [(); N].map(|_| Vec::new()),
+            states: HashMap::new(),
+            pattern_found: false,
         }
     }
 
-    pub fn drop_one_rock(&mut self, mut rock: Rock, moves: &mut impl Iterator<Item = Move>) {
+    pub fn drop_one_rock(
+        &mut self,
+        mut rock: Rock,
+        moves: &mut impl Iterator<Item = (usize, Move)>,
+    ) -> usize {
         rock.set_cord((2, self.highest as i64 + 3).into());
         for ele in self.occupied.iter_mut() {
             ele.extend(vec![false; 3 + rock.height as usize].into_iter());
         }
 
-        for mov in moves {
+        for (mov_index, mov) in moves {
             let _ = rock.try_move(mov, &self.occupied);
             if rock.try_move(Move::Down, &self.occupied).is_err() {
                 rock.set_map(&mut self.occupied);
                 self.highest = self.highest.max(rock.get_highest());
-                return;
+                return mov_index;
             }
         }
+
+        unreachable!()
+    }
+
+    pub fn check_pattern_cycle(
+        &mut self,
+        rock_index: usize,
+        mov_index: usize,
+        iter_index: usize,
+    ) -> Option<(usize, u64)> {
+        if self.pattern_found || self.highest < 8 {
+            return None;
+        }
+
+        let state = self
+            .occupied
+            .iter()
+            .flat_map(|v| (&v[self.highest as usize - 8..self.highest as usize]).iter())
+            .fold(0u64, |state, occupied| {
+                if *occupied {
+                    state << 1 | 1
+                } else {
+                    state << 1
+                }
+            });
+
+        if let Entry::Occupied(e) = self.states.entry((state, rock_index, mov_index)) {
+            self.pattern_found = true;
+            return Some(e.get().clone());
+        } else {
+            self.states
+                .insert((state, rock_index, mov_index), (iter_index, self.highest));
+        }
+
+        None
     }
 }
 
@@ -195,6 +241,35 @@ impl From<Move> for Coordinate {
 }
 
 pub fn part_one(input: &str) -> Option<u64> {
+    //let mut moves = input
+    //    .trim()
+    //    .chars()
+    //    .map(|c| match c {
+    //        '>' => Move::Right,
+    //        '<' => Move::Left,
+    //        _ => unreachable!(),
+    //    })
+    //    .enumerate()
+    //    .cycle();
+
+    //let rocks = vec![
+    //    LINE.clone(),
+    //    PLUS.clone(),
+    //    MIRROR_L.clone(),
+    //    VLINE.clone(),
+    //    SQUARE.clone(),
+    //]
+    //.into_iter()
+    //.enumerate()
+    //.cycle()
+    //.take(2022);
+
+    //let mut tower = Tower::<7>::new();
+    //for (rock in rocks {
+    //    tower.drop_one_rock(rock, &mut moves);
+    //}
+
+    //Some(tower.highest)
     let mut moves = input
         .trim()
         .chars()
@@ -203,9 +278,10 @@ pub fn part_one(input: &str) -> Option<u64> {
             '<' => Move::Left,
             _ => unreachable!(),
         })
+        .enumerate()
         .cycle();
 
-    let rocks = vec![
+    let mut rocks = vec![
         LINE.clone(),
         PLUS.clone(),
         MIRROR_L.clone(),
@@ -213,15 +289,28 @@ pub fn part_one(input: &str) -> Option<u64> {
         SQUARE.clone(),
     ]
     .into_iter()
-    .cycle()
-    .take(2022);
+    .enumerate()
+    .cycle();
 
     let mut tower = Tower::<7>::new();
-    for rock in rocks {
-        tower.drop_one_rock(rock, &mut moves);
+    let mut i = 0usize;
+    let total_round = 2022;
+    let mut cycle_height = 0u64;
+    let mut cycle_count = 0usize;
+
+    while i < total_round {
+        let (rock_index, rock) = rocks.next().unwrap();
+        let mov_index = tower.drop_one_rock(rock, &mut moves);
+        if let Some((idx, height)) = tower.check_pattern_cycle(rock_index, mov_index, i) {
+            let cycle_len = i - idx;
+            cycle_count = (total_round - i) / cycle_len;
+            i += cycle_count * cycle_len;
+            cycle_height = tower.highest - height;
+        }
+        i += 1;
     }
 
-    Some(tower.highest)
+    Some(tower.highest + cycle_count as u64 * cycle_height)
 }
 
 pub fn part_two(input: &str) -> Option<u64> {
@@ -233,6 +322,7 @@ pub fn part_two(input: &str) -> Option<u64> {
             '<' => Move::Left,
             _ => unreachable!(),
         })
+        .enumerate()
         .cycle();
 
     let mut rocks = vec![
@@ -243,18 +333,28 @@ pub fn part_two(input: &str) -> Option<u64> {
         SQUARE.clone(),
     ]
     .into_iter()
+    .enumerate()
     .cycle();
 
     let mut tower = Tower::<7>::new();
-    let mut i = 0u64;
+    let mut i = 0usize;
+    let total_round = 1000000000000usize;
+    let mut cycle_height = 0u64;
+    let mut cycle_count = 0usize;
 
-    while i < 1000000000000 {
-        let rock = rocks.next().unwrap();
-        tower.drop_one_rock(rock, &mut moves);
+    while i < total_round {
+        let (rock_index, rock) = rocks.next().unwrap();
+        let mov_index = tower.drop_one_rock(rock, &mut moves);
+        if let Some((idx, height)) = tower.check_pattern_cycle(rock_index, mov_index, i) {
+            let cycle_len = i - idx;
+            cycle_count = (total_round - i) / cycle_len;
+            i += cycle_count * cycle_len;
+            cycle_height = tower.highest - height;
+        }
         i += 1;
     }
 
-    Some(tower.highest)
+    Some(tower.highest + cycle_count as u64 * cycle_height)
 }
 
 #[cfg(test)]
