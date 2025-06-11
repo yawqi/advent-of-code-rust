@@ -24,11 +24,13 @@ anyhow = "1.0.97"
 
 # Template dependencies
 chrono = { version = "0.4.38", optional = true }
+chumsky = "0.10.1"
 dhat = { version = "0.3.3", optional = true }
 itertools = "0.14.0"
 num-bigint = "0.4.6"
 peg = "0.8.5"
 pico-args = "0.5.0"
+rayon = "1.10.0"
 tinyjson = "2.5.1"
 
 # Solution dependencies
